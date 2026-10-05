@@ -1,0 +1,7 @@
+bcrypt
+Flask
+Flask-Bcrypt
+Flask-Cors
+Flask-JWT-Extended
+Flask-SocketIO
+mysql-connector-python
