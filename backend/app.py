@@ -10,7 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import mysql.connector
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS
 from flask_jwt_extended import decode_token
@@ -29,7 +29,7 @@ DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
     "port": int(os.getenv("DB_PORT", "3306")),
     "user": os.getenv("DB_USER", "root"),
-    "password": os.getenv("DB_PASSWORD", ""),
+    "password": os.getenv("DB_PASSWORD", "root"),
     "database": os.getenv("DB_NAME", "edabip_mini"),
     "autocommit": True,
     "charset": "utf8mb4",
@@ -178,6 +178,12 @@ def record_activity(cursor, user, action):
 
 def publish_activity(event):
     socketio.emit("activity_update", event, to="admins")
+
+
+def csv_safe_value(value):
+    if isinstance(value, str) and value.lstrip(" \t\r\n")[:1] in {"=", "+", "-", "@"}:
+        return "'" + value
+    return value
 
 
 def get_current_user():
@@ -493,20 +499,33 @@ def get_kpis():
     current_month = cursor.fetchone()
     cursor.execute(base_month_query, (last_month_start, this_month_start, *month_params))
     previous_month = cursor.fetchone()
+    monthly_department_query = (
+        "SELECT d.name, COUNT(*) AS count FROM metrics m "
+        "JOIN departments d ON d.id = m.department_id "
+        "WHERE m.recorded_on >= %s AND m.recorded_on < %s"
+    ) + month_filter + " GROUP BY d.name"
+    cursor.execute(monthly_department_query, (this_month_start, next_month_start, *month_params))
+    current_department_counts = {row["name"]: int(row["count"]) for row in cursor.fetchall()}
+    cursor.execute(monthly_department_query, (last_month_start, this_month_start, *month_params))
+    previous_department_counts = {row["name"]: int(row["count"]) for row in cursor.fetchall()}
     cursor.close()
     conn.close()
 
     current_value = float(current_month["value"] or 0)
     previous_value = float(previous_month["value"] or 0)
     change = (current_value - previous_value) / previous_value * 100 if previous_value else 0
+    active_department_name = active["name"] if active else None
     return jsonify({
         "total_metric_value": float(totals["total_value"] or 0),
         "total_records": int(totals["total_records"] or 0),
         "records_this_month": int(current_month["records"] or 0),
+        "records_last_month": int(previous_month["records"] or 0),
         "most_active_department": {
-            "name": active["name"] if active else "N/A",
+            "name": active_department_name or "N/A",
             "count": int(active["count"]) if active else 0,
         },
+        "active_department_this_month_count": current_department_counts.get(active_department_name, 0),
+        "active_department_last_month_count": previous_department_counts.get(active_department_name, 0),
         "month_over_month_change": round(change, 2),
         "this_month_value": current_value,
         "last_month_value": previous_value,
@@ -617,6 +636,60 @@ def top_metrics():
     for row in rows:
         row["total_value"] = float(row["total_value"] or 0)
     return jsonify(rows)
+
+
+@app.route("/api/metrics/export", methods=["GET"])
+@jwt_required()
+def export_metrics():
+    try:
+        start_date, end_date = get_date_filters()
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    department = request.args.get("department")
+    search = (request.args.get("search") or "").strip()
+    if len(search) > 100:
+        return jsonify({"error": "search must be 100 characters or fewer"}), 400
+
+    query = (
+        "SELECT d.name AS department, m.metric_name, m.metric_value, "
+        "DATE_FORMAT(m.recorded_on, '%Y-%m-%d') AS recorded_on "
+        "FROM metrics m JOIN departments d ON d.id = m.department_id WHERE 1=1"
+    )
+    params = []
+    if department:
+        query += " AND d.name = %s"
+        params.append(department)
+    if start_date:
+        query += " AND m.recorded_on >= %s"
+        params.append(start_date)
+    if end_date:
+        query += " AND m.recorded_on <= %s"
+        params.append(end_date)
+    if search:
+        query += " AND m.metric_name LIKE %s"
+        params.append(f"%{search}%")
+    query += " ORDER BY m.recorded_on DESC, m.id DESC"
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(query, tuple(params))
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    output = StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(("department", "metric_name", "metric_value", "recorded_on"))
+    for row in rows:
+        writer.writerow(
+            csv_safe_value(row[key])
+            for key in ("department", "metric_name", "metric_value", "recorded_on")
+        )
+    return Response(
+        "\ufeff" + output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="edabip-metrics.csv"'},
+    )
 
 
 @app.route("/api/metrics", methods=["GET"])
@@ -845,6 +918,74 @@ def get_activity():
     return jsonify(rows)
 
 
+@app.route("/api/users", methods=["GET"])
+@jwt_required()
+@role_allowed("admin")
+def list_users():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT id, name, email, role, created_at FROM users ORDER BY name, id"
+    )
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return jsonify(rows)
+
+
+@app.route("/api/users/<int:user_id>/role", methods=["PUT"])
+@jwt_required()
+@role_allowed("admin")
+def update_user_role(user_id):
+    payload = request.get_json(silent=True)
+    role = payload.get("role") if isinstance(payload, dict) else None
+    if role not in {"admin", "analyst", "viewer"}:
+        return jsonify({"error": "role must be admin, analyst, or viewer"}), 400
+
+    actor = get_current_user()
+    if user_id == actor["id"]:
+        return jsonify({"error": "You cannot change your own role"}), 400
+
+    conn = get_db_connection(transactional=True)
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id, name, email, role FROM users WHERE id = %s FOR UPDATE", (user_id,))
+        target = cursor.fetchone()
+        if not target:
+            conn.rollback()
+            return jsonify({"error": "User not found"}), 404
+        if target["role"] == "admin" and role != "admin":
+            cursor.execute("SELECT id FROM users WHERE role = 'admin' ORDER BY id FOR UPDATE")
+            if len(cursor.fetchall()) <= 1:
+                conn.rollback()
+                return jsonify({"error": "The last administrator cannot be demoted"}), 409
+
+        previous_role = target["role"]
+        cursor.execute("UPDATE users SET role = %s WHERE id = %s", (role, user_id))
+        target["role"] = role
+        event = record_activity(
+            cursor,
+            actor,
+            f"Admin {actor['name']} changed {target['name']}'s role to {role}",
+        )
+        conn.commit()
+        publish_activity(event)
+        if previous_role == "admin" and role != "admin":
+            socketio.emit(
+                "session_role_changed",
+                {"role": role},
+                to=f"user:{user_id}",
+            )
+        return jsonify(target)
+    except Exception:
+        conn.rollback()
+        app.logger.exception("Failed to update user role")
+        return jsonify({"error": "Could not update user role"}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @socketio.on("connect")
 def handle_connect(auth=None):
     token = auth.get("token") if isinstance(auth, dict) else None
@@ -863,7 +1004,7 @@ def handle_connect(auth=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT u.role, r.jti IS NOT NULL AS revoked FROM users u "
+        "SELECT u.role, r.jti IS NOT NULL AS revoked, u.id FROM users u "
         "LEFT JOIN revoked_tokens r ON r.jti = %s WHERE u.id = %s",
         (claims.get("jti"), user_id),
     )
@@ -872,6 +1013,7 @@ def handle_connect(auth=None):
     conn.close()
     if not user or user[0] != "admin" or user[1]:
         return False
+    join_room(f"user:{user[2]}")
     join_room("admins")
     emit("status", {"message": "Connected to EDABIP live feed"})
 

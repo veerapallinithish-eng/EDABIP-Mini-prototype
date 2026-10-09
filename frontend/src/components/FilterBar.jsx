@@ -1,4 +1,4 @@
-export default function FilterBar({ departments, filters, onChange, onReset }) {
+export default function FilterBar({ departments, filters, onChange, onReset, onExport, exporting }) {
   return (
     <section className="filter-bar" aria-label="Dashboard filters">
       <label>
@@ -33,6 +33,9 @@ export default function FilterBar({ departments, filters, onChange, onReset }) {
       </label>
       <button type="button" className="button button-secondary filter-reset" onClick={onReset}>
         Reset filters
+      </button>
+      <button type="button" className="button button-secondary" onClick={onExport} disabled={exporting}>
+        {exporting ? 'Preparing CSV…' : 'Export CSV'}
       </button>
     </section>
   );

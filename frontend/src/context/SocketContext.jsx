@@ -15,6 +15,7 @@ export function SocketProvider({ children }) {
       return undefined;
     }
     const client = io(SOCKET_URL, { transports: ['websocket'], auth: { token } });
+    client.on('session_role_changed', () => client.disconnect());
     setSocket(client);
 
     return () => {

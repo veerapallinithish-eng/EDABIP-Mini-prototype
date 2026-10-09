@@ -8,6 +8,7 @@ import TopMetricsTable from '../components/TopMetricsTable';
 import TrendChart from '../components/TrendChart';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
+import { calculateTrend } from '../utils/trend';
 
 const EMPTY_KPIS = {
   total_metric_value: 0,
@@ -31,6 +32,7 @@ export default function Dashboard() {
   const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     api.get('/departments')
@@ -72,9 +74,38 @@ export default function Dashboard() {
     return () => socket.off('activity_update', loadDashboard);
   }, [socket, loadDashboard]);
 
+  const exportMetrics = async () => {
+    setExporting(true);
+    setError('');
+    const params = Object.fromEntries(
+      Object.entries(filters).filter(([, value]) => value),
+    );
+    try {
+      const response = await api.get('/metrics/export', { params, responseType: 'blob' });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'edabip-metrics.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Unable to export filtered metrics. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const money = (value) => Number(value || 0).toLocaleString(undefined, {
     maximumFractionDigits: 2,
   });
+  const totalTrend = calculateTrend(kpis.this_month_value, kpis.last_month_value);
+  const recordsTrend = calculateTrend(kpis.records_this_month, kpis.records_last_month);
+  const departmentTrend = calculateTrend(
+    kpis.active_department_this_month_count,
+    kpis.active_department_last_month_count,
+  );
 
   return (
     <div className="page-shell dashboard-page">
@@ -92,6 +123,8 @@ export default function Dashboard() {
         filters={filters}
         onChange={setFilters}
         onReset={() => setFilters(EMPTY_FILTERS)}
+        onExport={exportMetrics}
+        exporting={exporting}
       />
       {error && <div className="error-box page-error" role="alert">{error}</div>}
 
@@ -105,25 +138,28 @@ export default function Dashboard() {
             <span className="kpi-icon">Σ</span>
             <p>Total metric value</p>
             <strong>{money(kpis.total_metric_value)}</strong>
+            <small className={totalTrend.className}>{totalTrend.label} vs last month</small>
             <small>Across selected records</small>
           </article>
           <article className="kpi-card panel">
             <span className="kpi-icon kpi-icon-green">#</span>
             <p>Records this month</p>
             <strong>{Number(kpis.records_this_month || 0).toLocaleString()}</strong>
+            <small className={recordsTrend.className}>{recordsTrend.label} vs last month</small>
             <small>For the current month</small>
           </article>
           <article className="kpi-card panel">
             <span className="kpi-icon kpi-icon-orange">↗</span>
             <p>Most active department</p>
             <strong className="kpi-department">{kpis.most_active_department?.name || 'N/A'}</strong>
+            <small className={departmentTrend.className}>{departmentTrend.label} in monthly records</small>
             <small>{Number(kpis.most_active_department?.count || 0).toLocaleString()} records</small>
           </article>
           <article className="kpi-card panel">
             <span className="kpi-icon kpi-icon-purple">%</span>
             <p>Month-on-month change</p>
-            <strong className={Number(kpis.month_over_month_change) >= 0 ? 'trend-up' : 'trend-down'}>
-              {Number(kpis.month_over_month_change) >= 0 ? '↑' : '↓'} {Math.abs(Number(kpis.month_over_month_change || 0)).toFixed(2)}%
+            <strong className={Number(kpis.month_over_month_change) > 0 ? 'trend-up' : Number(kpis.month_over_month_change) < 0 ? 'trend-down' : 'trend-neutral'}>
+              {Number(kpis.month_over_month_change) > 0 ? '↑' : Number(kpis.month_over_month_change) < 0 ? '↓' : '→'} {Math.abs(Number(kpis.month_over_month_change || 0)).toFixed(2)}%
             </strong>
             <small>Compared with last month</small>
           </article>

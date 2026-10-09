@@ -1,0 +1,49 @@
+Task 20 – EDABIP Mini Prototype
+
+
+ 1. How does this task combine skills from previous tasks?
+
+This task combines the skills I learned in previous tasks. I used React for the frontend, Flask for the backend, and MySQL for storing data. I also used JWT for login, Recharts for charts, Context API for dark mode, and Socket.IO for real-time updates. This helped me understand how to connect everything in one project.
+
+ 
+
+2. Which part was hardest to connect together and why?
+
+The hardest part was connecting CSV upload with the database and activity feed. I had to validate the file, save the records in MySQL, and update the activity feed without refreshing the page. It was challenging because different parts of the application had to work together.
+
+
+
+
+
+
+ 3. How does your CSV upload work from file input to database?
+
+1. The user selects a CSV file.
+2. The frontend shows a preview of the first five rows.
+3. When the user clicks Upload, the file is sent to the Flask backend.
+4. The backend checks the file and its data.
+5. The valid records are saved in MySQL.
+6. The backend saves an activity log.
+7. The frontend shows the upload result and updates the activity feed.
+
+This feature helps users upload many records at once.
+
+
+
+
+ 4. How does the activity feed update in real time?
+
+When a user uploads a CSV file, the Flask backend validates the data and saves the records in MySQL. It then saves an activity message and sends a Socket.IO event to the frontend.
+
+The React frontend receives the event and updates the activity feed immediately without refreshing the page. This helps the admin see recent activities quickly.
+
+
+
+
+ 5. Which concept changed how you think about software the most?
+
+The concept that changed my thinking the most was connecting the frontend, backend, and database.
+
+Earlier, I mainly focused on individual features. Now, I understand that all parts must work together properly. For example, uploading a CSV file involves selecting the file, validating the data, saving it in the database, and updating the dashboard.
+
+This helped me understand how to build a complete application instead of just creating individual pages.

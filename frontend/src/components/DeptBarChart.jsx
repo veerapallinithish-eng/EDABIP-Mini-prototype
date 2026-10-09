@@ -1,6 +1,8 @@
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import useReducedMotion from '../hooks/useReducedMotion';
 
 export default function DeptBarChart({ data }) {
+  const reducedMotion = useReducedMotion();
   return (
     <div className="chart-container">
       <ResponsiveContainer width="100%" height="100%">
@@ -12,7 +14,7 @@ export default function DeptBarChart({ data }) {
             formatter={(value) => [Number(value).toLocaleString(), 'Value']}
             contentStyle={{ background: 'var(--panel-bg)', borderColor: 'var(--border)', borderRadius: 12 }}
           />
-          <Bar dataKey="value" fill="#4f7df3" radius={[6, 6, 0, 0]} maxBarSize={48} />
+          <Bar dataKey="value" fill="#4f7df3" radius={[6, 6, 0, 0]} maxBarSize={48} isAnimationActive={!reducedMotion} />
         </BarChart>
       </ResponsiveContainer>
     </div>

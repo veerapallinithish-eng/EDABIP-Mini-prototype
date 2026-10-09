@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react';
-import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { BrowserRouter, Link, Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -12,13 +12,26 @@ import './App.css';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const DataManagement = lazy(() => import('./pages/DataManagement'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const UserManagement = lazy(() => import('./pages/UserManagement'));
 
 function AppLayout() {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    const saved = localStorage.getItem('sidebar-collapsed');
+    return saved === null ? window.matchMedia('(max-width: 700px)').matches : saved === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('sidebar-collapsed', String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
   return (
-    <>
-      <Navbar />
+    <div className={`app-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+      <Navbar
+        collapsed={sidebarCollapsed}
+        onToggleSidebar={() => setSidebarCollapsed((collapsed) => !collapsed)}
+      />
       <main className="app-content"><Outlet /></main>
-    </>
+    </div>
   );
 }
 
@@ -43,7 +56,28 @@ function App() {
                       )}
                     />
                     <Route path="/profile" element={<ProfilePage />} />
-                    <Route path="/403" element={<div className="placeholder-page">403: Access denied</div>} />
+                    <Route
+                      path="/users"
+                      element={(
+                        <RoleRoute allowedRoles={['admin']}>
+                          <UserManagement />
+                        </RoleRoute>
+                      )}
+                    />
+                    <Route
+                      path="/403"
+                      element={(
+                        <section className="forbidden-page" role="alert">
+                          <span className="forbidden-code">403</span>
+                          <p className="eyebrow">Access restricted</p>
+                          <h1>Data management is for analysts and admins</h1>
+                          <p className="page-subtitle">
+                            Your viewer account can explore the dashboard, but it does not have permission to manage data.
+                          </p>
+                          <Link className="button button-primary" to="/dashboard">Return to dashboard</Link>
+                        </section>
+                      )}
+                    />
                   </Route>
                 </Route>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />

@@ -7,6 +7,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import useReducedMotion from '../hooks/useReducedMotion';
 
 const formatMonth = (month) => new Date(`${month}-01T00:00:00`).toLocaleDateString(undefined, {
   month: 'short',
@@ -14,6 +15,7 @@ const formatMonth = (month) => new Date(`${month}-01T00:00:00`).toLocaleDateStri
 });
 
 export default function TrendChart({ data }) {
+  const reducedMotion = useReducedMotion();
   return (
     <div className="chart-container">
       <ResponsiveContainer width="100%" height="100%">
@@ -32,7 +34,7 @@ export default function TrendChart({ data }) {
             formatter={(value) => [Number(value).toLocaleString(), 'Value']}
             contentStyle={{ background: 'var(--panel-bg)', borderColor: 'var(--border)', borderRadius: 12 }}
           />
-          <Area type="monotone" dataKey="value" stroke="#4f7df3" strokeWidth={2.5} fill="url(#trendFill)" />
+          <Area type="monotone" dataKey="value" stroke="#4f7df3" strokeWidth={2.5} fill="url(#trendFill)" isAnimationActive={!reducedMotion} />
         </AreaChart>
       </ResponsiveContainer>
     </div>

@@ -1,15 +1,17 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
+import useReducedMotion from '../hooks/useReducedMotion';
 
 const COLORS = ['#4f7df3', '#17a987', '#ffad5c', '#9b7cf6', '#ed6a83'];
 
 export default function DeptPieChart({ data }) {
+  const reducedMotion = useReducedMotion();
   const chartData = data.filter((item) => Number(item.value) > 0);
   if (!chartData.length) return <div className="chart-empty">No department values for this filter.</div>;
   return (
     <div className="chart-container pie-container">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
-          <Pie data={chartData} dataKey="value" nameKey="department" innerRadius={58} outerRadius={98} paddingAngle={3}>
+          <Pie data={chartData} dataKey="value" nameKey="department" innerRadius={58} outerRadius={98} paddingAngle={3} isAnimationActive={!reducedMotion}>
             {chartData.map((entry, index) => (
               <Cell key={entry.department} fill={COLORS[index % COLORS.length]} />
             ))}
